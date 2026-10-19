@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MikuMusic</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F2FBFA; --ink:#0B2E33; --ink-soft:#4C6F73; --miku:#39C5BB; --miku-deep:#0E7C7B;
+  --pink:#E8397D; --card:#FFFFFF; --line:#CBE9E6; --shadow:0 10px 30px -12px rgba(14,124,123,.35);
+  --display:'Unbounded','Trebuchet MS',sans-serif; --body:'Figtree','Segoe UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--body);background:var(--bg);color:var(--ink);line-height:1.5;padding-bottom:120px;min-height:100vh}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+:focus-visible{outline:3px solid var(--pink);outline-offset:2px;border-radius:8px}
+
+/* topo */
+.top{display:flex;align-items:center;justify-content:space-between;padding:18px clamp(16px,4vw,48px);position:sticky;top:0;z-index:20;background:rgba(242,251,250,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.logo{font-family:var(--display);font-weight:700;font-size:1.2rem;letter-spacing:-.02em;display:flex;align-items:center;gap:10px}
+.logo i{width:30px;height:30px;border-radius:50%;background:conic-gradient(var(--miku),var(--miku-deep),var(--pink),var(--miku));display:inline-block}
+.logo b{color:var(--miku-deep);font-weight:700}
+nav{display:flex;gap:6px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:4px}
+nav button{padding:8px 18px;border-radius:999px;font-weight:600;font-size:.92rem;color:var(--ink-soft);transition:.2s}
+nav button[aria-selected="true"]{background:var(--ink);color:#fff}
+
+/* hero */
+.hero{position:relative;overflow:hidden;padding:clamp(48px,9vw,110px) clamp(16px,4vw,48px) 56px;text-align:center}
+.bars{position:absolute;inset:auto 0 0 0;height:70%;display:flex;align-items:flex-end;gap:6px;padding:0 2vw;opacity:.9;pointer-events:none;-webkit-mask-image:linear-gradient(to top,#000 20%,transparent);mask-image:linear-gradient(to top,#000 20%,transparent)}
+.bars span{flex:1;border-radius:8px 8px 0 0;background:linear-gradient(to top,var(--miku),#BFF3EE);transform-origin:bottom;animation:eq 1.6s ease-in-out infinite alternate}
+.bars span:nth-child(5n){background:linear-gradient(to top,var(--pink),#FFD0E2)}
+@keyframes eq{from{transform:scaleY(.15)}to{transform:scaleY(1)}}
+.hero h1{position:relative;font-family:var(--display);font-weight:700;font-size:clamp(2.2rem,7vw,5rem);line-height:1.02;letter-spacing:-.04em;max-width:14ch;margin:0 auto 18px}
+.hero p{position:relative;color:var(--ink-soft);font-size:1.1rem;max-width:46ch;margin:0 auto 32px}
+.search{position:relative;display:flex;max-width:640px;margin:0 auto;background:#fff;border:2px solid var(--ink);border-radius:999px;padding:6px;box-shadow:6px 6px 0 var(--miku)}
+.search input{flex:1;border:0;background:none;padding:12px 20px;font:inherit;font-size:1.05rem;color:var(--ink);min-width:0}
+.search input:focus{outline:none}
+.search button{background:var(--ink);color:#fff;padding:0 28px;border-radius:999px;font-weight:600}
+.search button:hover{background:var(--miku-deep)}
+.chips{position:relative;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:24px}
+.chip{padding:7px 16px;border-radius:999px;background:#fff;border:1px solid var(--line);font-size:.9rem;font-weight:500;transition:.15s}
+.chip:hover{border-color:var(--miku-deep);color:var(--miku-deep);transform:translateY(-2px)}
+
+/* conteúdo */
+main{padding:0 clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
+.head{display:flex;align-items:baseline;justify-content:space-between;margin:28px 0 18px;gap:12px;flex-wrap:wrap}
+.head h2{font-family:var(--display);font-size:1.4rem;letter-spacing:-.03em}
+.head small{color:var(--ink-soft)}
+.banner{background:#fff;border:1px dashed var(--miku-deep);color:var(--miku-deep);border-radius:14px;padding:12px 16px;margin-bottom:18px;font-size:.92rem}
+.banner[hidden]{display:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:12px;transition:.2s;position:relative}
+.card:hover{box-shadow:var(--shadow);transform:translateY(-3px)}
+.card.playing{border-color:var(--pink);box-shadow:0 0 0 2px var(--pink)}
+.cover{position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;margin-bottom:12px}
+.cover img,.cover .ph{width:100%;height:100%;object-fit:cover;display:block}
+.cover .ph{display:grid;place-items:center;font-family:var(--display);font-size:2.2rem;color:rgba(255,255,255,.9)}
+.play{position:absolute;right:10px;bottom:10px;width:46px;height:46px;border-radius:50%;background:var(--pink);color:#fff;display:grid;place-items:center;box-shadow:0 8px 18px -6px rgba(232,57,125,.7);transition:.2s}
+.play:hover{transform:scale(1.1)}
+.card h3{font-size:1rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card p{font-size:.88rem;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fav{position:absolute;top:18px;left:18px;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.92);display:grid;place-items:center}
+.fav svg{width:18px;height:18px;fill:none;stroke:var(--ink);stroke-width:2}
+.fav[aria-pressed="true"] svg{fill:var(--pink);stroke:var(--pink)}
+.empty{text-align:center;padding:60px 20px;color:var(--ink-soft)}
+.empty strong{display:block;font-family:var(--display);color:var(--ink);font-size:1.2rem;margin-bottom:6px}
+.skeleton{height:250px;border-radius:20px;background:linear-gradient(90deg,#E2F5F3 25%,#F2FBFA 50%,#E2F5F3 75%);background-size:200% 100%;animation:sk 1.2s infinite}
+@keyframes sk{to{background-position:-200% 0}}
+
+/* player */
+.player{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);width:min(880px,calc(100% - 24px));background:var(--ink);color:#fff;border-radius:24px;padding:12px 18px;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.6fr) auto;gap:16px;align-items:center;z-index:30;box-shadow:0 20px 40px -12px rgba(11,46,51,.6)}
+.np{display:flex;align-items:center;gap:12px;min-width:0}
+.np .thumb{width:48px;height:48px;border-radius:12px;flex:none;overflow:hidden;background:var(--miku-deep)}
+.np .thumb img,.np .thumb .ph{width:100%;height:100%;object-fit:cover;display:grid;place-items:center}
+.np b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.np span{display:block;font-size:.82rem;color:#9FD9D5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctrl{display:flex;flex-direction:column;gap:6px;align-items:center}
+.ctrl .btns{display:flex;gap:14px;align-items:center}
+.ctrl .btns button{width:34px;height:34px;display:grid;place-items:center;border-radius:50%}
+.ctrl .btns button:hover{background:rgba(255,255,255,.12)}
+.ctrl .btns .main{width:44px;height:44px;background:var(--miku);color:var(--ink)}
+.ctrl .btns .main:hover{background:#fff}
+.prog{display:flex;align-items:center;gap:10px;width:100%;font-size:.75rem;color:#9FD9D5}
+input[type=range]{-webkit-appearance:none;appearance:none;height:5px;border-radius:99px;background:rgba(255,255,255,.2);width:100%;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--miku)}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--miku)}
+.vol{width:90px}
+.toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%) translateY(20px);background:#fff;color:var(--ink);border:2px solid var(--ink);padding:10px 18px;border-radius:999px;font-weight:500;opacity:0;pointer-events:none;transition:.25s;z-index:40}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (max-width:720px){
+  .player{grid-template-columns:1fr auto;gap:10px}
+  .player .prog{display:none}.vol{display:none}
+  nav button{padding:8px 12px}
+  .grid{grid-template-columns:repeat(2,1fr);gap:12px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="logo"><i></i>Miku<b>Music</b></div>
+  <nav role="tablist" aria-label="Seções">
+    <button role="tab" id="tab-discover" aria-selected="true">Descobrir</button>
+    <button role="tab" id="tab-favs" aria-selected="false">Minha lista <span id="favCount"></span></button>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="bars" id="bars" aria-hidden="true"></div>
+  <h1>Toda música em um só lugar.</h1>
+  <p>Busque faixas, ouça prévias e monte sua lista no MikuMusic.</p>
+  <form class="search" id="searchForm" role="search">
+    <input id="q" type="search" placeholder="Nome da música ou do artista" aria-label="Buscar música" autocomplete="off">
+    <button type="submit">Buscar</button>
+  </form>
+  <div class="chips" id="chips"></div>
+</section>
+
+<main>
+  <div class="banner" id="banner" hidden></div>
+  <div class="head"><h2 id="title">Em destaque</h2><small id="count"></small></div>
+  <div class="grid" id="grid"></div>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<footer class="player" id="player" aria-label="Player">
+  <div class="np">
+    <div class="thumb" id="npThumb"></div>
+    <div style="min-width:0"><b id="npTitle">Nada tocando</b><span id="npArtist">Escolha uma faixa</span></div>
+  </div>
+  <div class="ctrl">
+    <div class="btns">
+      <button id="prev" aria-label="Faixa anterior"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+      <button class="main" id="toggle" aria-label="Tocar ou pausar"><svg id="icoPlay" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+      <button id="next" aria-label="Próxima faixa"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+    </div>
+    <div class="prog"><span id="cur">0:00</span><input type="range" id="seek" min="0" max="100" value="0" aria-label="Progresso"><span id="dur">0:00</span></div>
+  </div>
+  <input class="vol" type="range" id="vol" min="0" max="1" step="0.01" value="0.8" aria-label="Volume">
+</footer>
+
+<script>
+/* ================= CONFIGURAÇÃO ================= */
+// Endereço do seu servidor proxy (server.js). Vazio = mesmo domínio.
+// NUNCA coloque o Client ID / Secret da MusicAPI neste arquivo.
+const API_BASE = '';
+
+/* ================= DADOS DE DEMONSTRAÇÃO ================= */
+const DEMO = [
+  ['World Is Mine','Hatsune Miku'],['Tell Your World','livetune feat. Hatsune Miku'],
+  ['Senbonzakura','Hatsune Miku'],['Ievan Polkka','Hatsune Miku'],
+  ['Melt','Hatsune Miku'],['The Disappearance of Hatsune Miku','Hatsune Miku'],
+  ['Ghost Rule','DECO*27 feat. Hatsune Miku'],['Love is War','Hatsune Miku'],
+  ['Rolling Girl','Hatsune Miku'],['Sing & Smile','Hatsune Miku'],
+  ['Blue Star','Hatsune Miku'],['Weekender Girl','Hatsune Miku']
+].map(([name,artist],i)=>({id:'demo'+i,name,artist,album:'Demonstração',imageUrl:null,previewUrl:null}));
+
+/* ================= ESTADO ================= */
+const $ = s => document.querySelector(s);
+const audio = new Audio();
+audio.volume = .8;
+let list = [], view = 'discover', current = -1, favs = [];
+
+try{ favs = JSON.parse(localStorage.getItem('mikumusic:favs') || '[]'); }catch(e){ favs = []; }
+const saveFavs = () => { try{ localStorage.setItem('mikumusic:favs', JSON.stringify(favs)); }catch(e){} $('#favCount').textContent = favs.length ? `(${favs.length})` : ''; };
+
+/* ================= UTILIDADES ================= */
+const fmt = s => isFinite(s) ? Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0') : '0:00';
+const hue = str => { let h=0; for(const c of str) h=(h*31+c.charCodeAt(0))%360; return h; };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>t.classList.remove('show'),2400); }
+function coverHTML(t){
+  if(t.imageUrl) return `<img src="${esc(t.imageUrl)}" alt="" loading="lazy">`;
+  const h = hue(t.name+t.artist);
+  return `<div class="ph" style="background:linear-gradient(135deg,hsl(${h} 70% 55%),hsl(${(h+60)%360} 75% 65%))">${esc((t.name||'?')[0])}</div>`;
+}
+
+/* ================= API ================= */
+function normalize(data){
+  return (data.results || []).filter(r=>r.type==='track' && r.track).map(r=>{
+    const t = r.track;
+    return {
+      id: t.id, name: t.name,
+      artist: (t.artists||[]).map(a=>a.name).join(', ') || 'Artista desconhecido',
+      album: t.album ? t.album.name : '',
+      imageUrl: t.imageUrl, previewUrl: t.previewUrl, duration: t.duration
+    };
+  });
+}
+async function searchAPI(q){
+  const ctrl = new AbortController(); const to = setTimeout(()=>ctrl.abort(), 12000);
+  try{
+    const res = await fetch(`${API_BASE}/api/search`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ query:q }), signal: ctrl.signal
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    return normalize(await res.json());
+  } finally { clearTimeout(to); }
+}
+
+/* ================= RENDER ================= */
+function render(){
+  const grid = $('#grid');
+  if(!list.length){
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><strong>${view==='favs'?'Sua lista está vazia':'Nenhum resultado'}</strong>${view==='favs'?'Toque no coração de uma faixa para salvá-la aqui.':'Tente outro nome de música ou artista.'}</div>`;
+    $('#count').textContent=''; return;
+  }
+  $('#count').textContent = list.length + (list.length===1?' faixa':' faixas');
+  grid.innerHTML = list.map((t,i)=>`
+    <article class="card ${i===current?'playing':''}" data-i="${i}">
+      <div class="cover">${coverHTML(t)}
+        <button class="play" data-act="play" aria-label="Tocar ${esc(t.name)}"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+      </div>
+      <button class="fav" data-act="fav" aria-pressed="${favs.some(f=>f.id===t.id)}" aria-label="Salvar na minha lista"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.6-9.3-9.1C1.2 8.8 3 5 6.6 5c2 0 3.4 1.1 5.4 3 2-1.9 3.4-3 5.4-3 3.600 0 5.400 3.800 3.900 6.900C19 16.400 12 21 12 21z"/></svg></button>
+      <h3 title="${esc(t.name)}">${esc(t.name)}</h3>
+      <p title="${esc(t.artist)}">${esc(t.artist)}</p>
+    </article>`).join('');
+}
+function skeletons(){ $('#grid').innerHTML = Array(8).fill('<div class="skeleton"></div>').join(''); }
+function setBanner(msg){ const b=$('#banner'); b.hidden=!msg; b.textContent=msg||''; }
+
+/* ================= PLAYER ================= */
+function play(i){
+  const t = list[i]; if(!t) return;
+  current = i;
+  $('#npTitle').textContent = t.name; $('#npArtist').textContent = t.artist;
+  $('#npThumb').innerHTML = coverHTML(t);
+  render();
+  if(!t.previewUrl){ audio.pause(); setIcon(false); toast('Esta faixa não tem prévia disponível'); return; }
+  audio.src = t.previewUrl;
+  audio.play().catch(()=>toast('Não foi possível tocar esta prévia'));
+}
+function setIcon(playing){
+  $('#icoPlay').innerHTML = playing ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>';
+}
+audio.addEventListener('play',()=>setIcon(true));
+audio.addEventListener('pause',()=>setIcon(false));
+audio.addEventListener('ended',()=>step(1));
+audio.addEventListener('loadedmetadata',()=>{ $('#dur').textContent=fmt(audio.duration); });
+audio.addEventListener('timeupdate',()=>{
+  $('#cur').textContent = fmt(audio.currentTime);
+  if(audio.duration) $('#seek').value = (audio.currentTime/audio.duration)*100;
+});
+function step(d){ if(!list.length) return; play((current + d + list.length) % list.length); }
+$('#toggle').onclick = ()=>{ if(current<0){ play(0); return; } audio.paused ? audio.play() : audio.pause(); };
+$('#prev').onclick = ()=>step(-1);
+$('#next').onclick = ()=>step(1);
+$('#seek').oninput = e=>{ if(audio.duration) audio.currentTime = (e.target.value/100)*audio.duration; };
+$('#vol').oninput = e=>{ audio.volume = e.target.value; };
+
+/* ================= AÇÕES ================= */
+async function doSearch(q){
+  q = q.trim(); if(!q) return;
+  view='discover'; setTabs();
+  $('#title').textContent = `Resultados para “${q}”`;
+  skeletons();
+  try{
+    list = await searchAPI(q); current=-1; setBanner('');
+  }catch(err){
+    list = DEMO.filter(t=>(t.name+t.artist).toLowerCase().includes(q.toLowerCase()));
+    if(!list.length) list = DEMO; current=-1;
+    setBanner('Modo demonstração: não consegui falar com o servidor da MusicAPI. Inicie o server.js com suas credenciais para ver resultados reais.');
+  }
+  render();
+  document.querySelector('main').scrollIntoView({behavior:'smooth'});
+}
+function setTabs(){
+  $('#tab-discover').setAttribute('aria-selected', view==='discover');
+  $('#tab-favs').setAttribute('aria-selected', view==='favs');
+}
+function showFavs(){
+  view='favs'; setTabs(); setBanner(''); current=-1;
+  $('#title').textContent='Minha lista'; list = favs.slice(); render();
+}
+function showHome(){
+  view='discover'; setTabs(); current=-1;
+  $('#title').textContent='Em destaque'; list = DEMO.slice(); render();
+  setBanner('Mostrando exemplos. Busque acima para ver músicas reais da MusicAPI.');
+}
+
+$('#searchForm').addEventListener('submit',e=>{ e.preventDefault(); doSearch($('#q').value); });
+$('#tab-discover').onclick = showHome;
+$('#tab-favs').onclick = showFavs;
+$('#grid').addEventListener('click',e=>{
+  const card = e.target.closest('.card'); if(!card) return;
+  const i = +card.dataset.i, act = e.target.closest('[data-act]')?.dataset.act;
+  if(act==='fav'){
+    const t = list[i], idx = favs.findIndex(f=>f.id===t.id);
+    if(idx>-1){ favs.splice(idx,1); toast('Removida da sua lista'); } else { favs.push(t); toast('Salva na sua lista'); }
+    saveFavs();
+    if(view==='favs'){ list = favs.slice(); current=-1; }
+    render();
+  } else if(act==='play' || e.target.closest('.cover')) play(i);
+});
+
+/* ================= INICIO ================= */
+const bars = $('#bars');
+for(let i=0;i<56;i++){ const s=document.createElement('span'); s.style.animationDelay=(-Math.random()*1.6)+'s'; s.style.animationDuration=(1+Math.random()*1.2)+'s'; bars.appendChild(s); }
+['Hatsune Miku','Vocaloid','J-Pop','Anime','Lo-fi','Eletrônica'].forEach(g=>{
+  const b=document.createElement('button'); b.className='chip'; b.type='button'; b.textContent=g;
+  b.onclick=()=>{ $('#q').value=g; doSearch(g); }; $('#chips').appendChild(b);
+});
+saveFavs(); showHome();
+</script>
+</body>
+</html>
