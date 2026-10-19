@@ -1,4 +1,4 @@
-// Ajuda compartilhada pelas funções da Vercel. O arquivo começa com "_" para não virar uma rota.
+// Ajuda compartilhada pelas funções da Vercel. O arquivo começa com "_" para não virar rota.
 const BASE = 'https://api.musicapi.com';
 
 function authHeader() {
