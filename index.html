@@ -64,6 +64,7 @@ main{padding:0 clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
 .play:hover{transform:scale(1.1)}
 .card h3{font-size:1rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card p{font-size:.88rem;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.src{font-size:.78rem!important;margin-top:4px}.src a{color:var(--miku-deep);font-weight:600;text-decoration:none}.src a:hover{text-decoration:underline}
 .fav{position:absolute;top:18px;left:18px;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.92);display:grid;place-items:center}
 .fav svg{width:18px;height:18px;fill:none;stroke:var(--ink);stroke-width:2}
 .fav[aria-pressed="true"] svg{fill:var(--pink);stroke:var(--pink)}
@@ -148,7 +149,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
 
 <script>
 /* ================= CONFIGURAÇÃO ================= */
-// Endereço do seu servidor proxy (server.js). Vazio = mesmo domínio.
+// Vazio = usa as funções /api/* do mesmo domínio (Vercel).
 // NUNCA coloque o Client ID / Secret da MusicAPI neste arquivo.
 const API_BASE = '';
 
@@ -166,6 +167,7 @@ const DEMO = [
 const $ = s => document.querySelector(s);
 const audio = new Audio();
 audio.volume = .8;
+const SERVICES = {spotify:'Spotify',deezer:'Deezer',appleMusic:'Apple Music',youtube:'YouTube',youtubeMusic:'YouTube Music',soundCloud:'SoundCloud',tidal:'Tidal',amazonMusic:'Amazon Music',napster:'Napster',pandora:'Pandora',qobuz:'Qobuz'};
 let list = [], view = 'discover', current = -1, favs = [];
 
 try{ favs = JSON.parse(localStorage.getItem('mikumusic:favs') || '[]'); }catch(e){ favs = []; }
@@ -183,17 +185,7 @@ function coverHTML(t){
 }
 
 /* ================= API ================= */
-function normalize(data){
-  return (data.results || []).filter(r=>r.type==='track' && r.track).map(r=>{
-    const t = r.track;
-    return {
-      id: t.id, name: t.name,
-      artist: (t.artists||[]).map(a=>a.name).join(', ') || 'Artista desconhecido',
-      album: t.album ? t.album.name : '',
-      imageUrl: t.imageUrl, previewUrl: t.previewUrl, duration: t.duration
-    };
-  });
-}
+function normalize(data){ return data.results || []; }
 async function searchAPI(q){
   const ctrl = new AbortController(); const to = setTimeout(()=>ctrl.abort(), 12000);
   try{
@@ -222,6 +214,7 @@ function render(){
       <button class="fav" data-act="fav" aria-pressed="${favs.some(f=>f.id===t.id)}" aria-label="Salvar na minha lista"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.6-9.3-9.1C1.2 8.8 3 5 6.6 5c2 0 3.4 1.1 5.4 3 2-1.9 3.4-3 5.4-3 3.600 0 5.400 3.800 3.900 6.900C19 16.400 12 21 12 21z"/></svg></button>
       <h3 title="${esc(t.name)}">${esc(t.name)}</h3>
       <p title="${esc(t.artist)}">${esc(t.artist)}</p>
+      ${t.source?`<p class="src">${t.url?`<a href="${esc(t.url)}" target="_blank" rel="noopener">Abrir no ${esc(SERVICES[t.source]||t.source)}</a>`:esc(SERVICES[t.source]||t.source)}</p>`:''}
     </article>`).join('');
 }
 function skeletons(){ $('#grid').innerHTML = Array(8).fill('<div class="skeleton"></div>').join(''); }
@@ -267,7 +260,7 @@ async function doSearch(q){
   }catch(err){
     list = DEMO.filter(t=>(t.name+t.artist).toLowerCase().includes(q.toLowerCase()));
     if(!list.length) list = DEMO; current=-1;
-    setBanner('Modo demonstração: não consegui falar com o servidor da MusicAPI. Inicie o server.js com suas credenciais para ver resultados reais.');
+    setBanner('Modo demonstração: a busca da MusicAPI não respondeu. Confira as variáveis de ambiente na Vercel e os logs da função /api/search.');
   }
   render();
   document.querySelector('main').scrollIntoView({behavior:'smooth'});
@@ -280,10 +273,19 @@ function showFavs(){
   view='favs'; setTabs(); setBanner(''); current=-1;
   $('#title').textContent='Minha lista'; list = favs.slice(); render();
 }
-function showHome(){
+async function showHome(){
   view='discover'; setTabs(); current=-1;
-  $('#title').textContent='Em destaque'; list = DEMO.slice(); render();
-  setBanner('Mostrando exemplos. Busque acima para ver músicas reais da MusicAPI.');
+  $('#title').textContent='Em destaque'; skeletons();
+  try{
+    const r = await fetch(`${API_BASE}/api/featured`);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    list = (await r.json()).results || []; setBanner('');
+    if(!list.length) throw new Error('vazio');
+  }catch(e){
+    list = DEMO.slice();
+    setBanner('Mostrando exemplos. Configure as variáveis da MusicAPI na Vercel para ver músicas reais.');
+  }
+  render();
 }
 
 $('#searchForm').addEventListener('submit',e=>{ e.preventDefault(); doSearch($('#q').value); });
