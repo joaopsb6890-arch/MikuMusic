@@ -1,0 +1,10 @@
+{
+  "name": "mikumusic",
+  "private": true,
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "dependencies": {
+    "@distube/ytdl-core": "^4.16.12"
+  }
+}

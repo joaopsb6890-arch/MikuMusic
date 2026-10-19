@@ -16,6 +16,7 @@ function makeRes() {
   r.status = c => { r.code = c; return r; };
   r.json = o => { r.body = o; return r; };
   r.send = b => { r.body = b; return r; };
+  r.end = b => { r.body = b; return r; };
   return r;
 }
 function invoke(handler, req) {
@@ -201,6 +202,150 @@ function invoke(handler, req) {
   // 11. EMBEDDED só para discordsays.com
   const emb = /const EMBEDDED = ([^;]+);/.exec(src)[1];
   check('EMBEDDED usa apenas o domínio do Discord', !emb.includes('window.self') && emb.includes('discordsays'));
+
+
+  // ===== ytaudio =====
+  const fs2 = require('fs');
+  const fakeYtdl = `module.exports = { getInfo: async (id) => {
+    if (id === 'semformato1') return { formats: [{ mimeType: 'video/mp4', url: 'https://rr1---sn-x.googlevideo.com/v' }], videoDetails: {} };
+    if (id === 'falhaaaaaaa') throw new Error('video unavailable');
+    return {
+      formats: [
+        { mimeType: 'audio/webm; codecs=opus', bitrate: 160000, url: 'https://rr1---sn-x.googlevideo.com/videoplayback?webm' },
+        { mimeType: 'audio/mp4; codecs=mp4a', bitrate: 128000, url: 'https://rr1---sn-x.googlevideo.com/videoplayback?m4a' }
+      ],
+      videoDetails: { lengthSeconds: '213', title: 'Tema QA' }
+    };
+  } };`;
+  fs2.writeFileSync('/tmp/fake-ytdl.js', fakeYtdl);
+  process.env.YTDL_MODULE = '/tmp/fake-ytdl.js';
+  delete require.cache[require.resolve('./api/ytaudio.js')];
+  const ytaudio = require('./api/ytaudio.js');
+
+  res = await invoke(ytaudio, { method: 'POST', body: { videoId: 'invalido' } });
+  check('ytaudio rejeita videoId inválido', res.code === 400, { code: res.code, body: res.body });
+
+  res = await invoke(ytaudio, { method: 'POST', body: { videoId: 'vid11111111' } });
+  check('ytaudio prefere AAC/mp4 (compatibilidade)', res.code === 200 && res.body.url.endsWith('m4a') && res.body.duration === 213, { code: res.code, body: res.body });
+
+  res = await invoke(ytaudio, { method: 'POST', body: { videoId: 'semformato1' } });
+  check('ytaudio devolve 404 sem formatos de áudio', res.code === 404, { code: res.code });
+
+  res = await invoke(ytaudio, { method: 'POST', body: { videoId: 'falhaaaaaaa' } });
+  check('ytaudio devolve 502 quando o YouTube falha', res.code === 502, { code: res.code });
+
+  process.env.YTDL_MODULE = '/tmp/modulo-que-nao-existe.js';
+  delete require.cache[require.resolve('./api/ytaudio.js')];
+  const ytaudio2 = require('./api/ytaudio.js');
+  res = await invoke(ytaudio2, { method: 'POST', body: { videoId: 'vid11111111' } });
+  check('ytaudio devolve 503 sem a dependência instalada', res.code === 503, { code: res.code, body: res.body });
+  process.env.YTDL_MODULE = '/tmp/fake-ytdl.js';
+  delete require.cache[require.resolve('./api/ytaudio.js')];
+
+  // ===== ytstream =====
+  const ytstream = require('./api/ytstream.js');
+  let capturedRange = null;
+
+  res = await invoke(ytstream, { method: 'GET', query: { u: 'https://evil.googlevideo.com.evil.com/x' } });
+  check('ytstream rejeita domínio não googlevideo', res.code === 403, { code: res.code });
+
+  res = await invoke(ytstream, { method: 'GET', query: { u: 'http://rr1---sn-x.googlevideo.com/videoplayback?x' } });
+  check('ytstream exige https', res.code === 400, { code: res.code });
+
+  // range do cliente retransmitido + 206/content-range devolvidos
+  const wavPart = Buffer.from(Uint8Array.from([1, 2, 3, 4]).buffer);
+  mockImpl = (url, opts) => {
+    capturedRange = opts.headers.range;
+    return Promise.resolve({
+      ok: true, status: 206,
+      headers: new Map([['content-type', 'audio/mp4'], ['content-range', 'bytes 100-103/1000']]),
+      body: { getReader: () => {
+        let reads = 0;
+        return { read: () => ++reads === 1 ? Promise.resolve({ done: false, value: wavPart }) : Promise.resolve({ done: true }) };
+      } }
+    });
+  };
+  res = await invoke(ytstream, { method: 'GET', query: { u: 'https://rr1---sn-x.googlevideo.com/videoplayback?x' }, headers: { range: 'bytes=100-' } });
+  check('ytstream limita range aberto a 4MB', capturedRange === 'bytes=100-4194403', { capturedRange });
+  check('ytstream devolve 206 com content-range', res.code === 206 && res.headers['content-range'] === 'bytes 100-103/1000', { code: res.code, headers: res.headers });
+
+  // sem range do cliente -> primeiro bloco
+  res = await invoke(ytstream, { method: 'GET', query: { u: 'https://rr1---sn-x.googlevideo.com/videoplayback?x' } });
+  check('ytstream sem range pede o primeiro bloco', capturedRange === 'bytes=0-4194303', { capturedRange });
+
+  // range fechado retransmitido tal como está
+  res = await invoke(ytstream, { method: 'GET', query: { u: 'https://rr1---sn-x.googlevideo.com/videoplayback?x' }, headers: { range: 'bytes=50-99' } });
+  check('ytstream retransmite range fechado', capturedRange === 'bytes=50-99', { capturedRange });
+
+  // redirecionamento
+  mockImpl = () => Promise.resolve({ ok: false, status: 302, headers: new Map([['content-type', 'audio/mp4']]) });
+  res = await invoke(ytstream, { method: 'GET', query: { u: 'https://rr1---sn-x.googlevideo.com/videoplayback?x' } });
+  check('ytstream rejeita redirecionamento', res.code === 403, { code: res.code });
+
+  // conteúdo não-áudio
+  mockImpl = () => Promise.resolve({ ok: true, status: 200, headers: new Map([['content-type', 'text/html']]), body: null });
+  res = await invoke(ytstream, { method: 'GET', query: { u: 'https://rr1---sn-x.googlevideo.com/videoplayback?x' } });
+  check('ytstream rejeita conteúdo não-áudio', res.code === 415, { code: res.code });
+
+  // ===== resolve devolve videoId (YouTube Music) =====
+  const makeCallYT = (tracks) => (path, body) => Promise.resolve({
+    tracks: tracks.map(t => ({ source: 'youtubeMusic', status: 'success', data: t }))
+  });
+  api.call = makeCallYT([
+    { externalId: 'ytvid12345', name: 'Tema YouTube', artistNames: ['QA Artista'], previewUrl: null, url: 'https://music.youtube.com/watch?v=ytvid12345' }
+  ]);
+  delete require.cache[require.resolve('./api/resolve.js')];
+  const resolve7 = require('./api/resolve.js');
+  res = await invoke(resolve7, { method: 'POST', body: { name: 'Tema YouTube', artist: 'QA Artista' } });
+  check('resolve devolve videoId do YouTube Music', res.code === 200 && res.body.videoId === 'ytvid12345', { code: res.code, body: res.body });
+  api.call = origCall;
+
+  // ===== resolve devolve várias versões (candidates) =====
+  api.call = makeCallYT([
+    { externalId: 'ytvid123456', name: 'Tema YouTube', artistNames: ['QA Artista'], previewUrl: null, url: 'https://music.youtube.com/watch?v=ytvid123456' },
+    { externalId: 'cand2', name: 'Tema YouTube', artistNames: ['QA Artista'], previewUrl: 'https://cdns-preview-2.dzcdn.net/stream/c-cand2-3.mp3', url: null }
+  ]);
+  delete require.cache[require.resolve('./api/resolve.js')];
+  const resolve8 = require('./api/resolve.js');
+  res = await invoke(resolve8, { method: 'POST', body: { name: 'Tema YouTube', artist: 'QA Artista' } });
+  check('resolve devolve candidatos ordenados (completa primeiro)',
+    res.code === 200 && Array.isArray(res.body.candidates) && res.body.candidates.length === 2 &&
+    !!res.body.candidates[0].videoId && !!res.body.candidates[1].previewUrl,
+    { code: res.code, body: res.body });
+  api.call = origCall;
+
+  // ===== resolve: título do YouTube "Artista - Música" (caso real do utilizador) =====
+  // a MusicAPI só encontra a faixa no Deezer quando a consulta é dividida
+  const makeCallReal = (body) => (path, reqBody) => {
+    const q = norm2(reqBody.track || '');
+    if (q.includes('lucas a r t')) {
+      // consulta com o título completo: só o resultado do YouTube (sem prévia)
+      return Promise.resolve({ tracks: [
+        { source: 'youtube', status: 'success', data: { externalId: 'ICpw2v83Eiw', name: 'Lucas A.R.T. - RADIOATIVO', artistNames: ['7 Minutoz'], albumName: '', imageUrl: null, previewUrl: null, url: 'https://youtu.be/ICpw2v83Eiw' } }
+      ] });
+    }
+    if (q.includes('radioativo')) {
+      // consulta com o título dividido: a faixa do Deezer com prévia
+      return Promise.resolve({ tracks: [
+        { source: 'deezer', status: 'success', data: { externalId: 'dz1', name: 'RADIOATIVO', artistNames: ['7 Minutoz'], albumName: 'X', imageUrl: null, previewUrl: 'https://cdnt-preview.dzcdn.net/api/1/1/radioativo.mp3', url: null } }
+      ] });
+    }
+    return Promise.resolve({ tracks: [] });
+  };
+  function norm2(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\p{L}\p{N}]+/gu,' ').replace(/\s+/g,' ').trim(); }
+  api.call = makeCallReal();
+  delete require.cache[require.resolve('./api/resolve.js')];
+  const resolve9 = require('./api/resolve.js');
+  res = await invoke(resolve9, { method: 'POST', body: { name: 'Lucas A.R.T. - RADIOATIVO', artist: '7 Minutoz' } });
+  check('resolve divide título "Artista - Música" e encontra a faixa',
+    res.code === 200 &&
+    res.body.candidates[0].videoId === 'ICpw2v83Eiw' &&
+    res.body.candidates.some(c => c.previewUrl && c.previewUrl.includes('radioativo')),
+    { code: res.code, body: res.body });
+  // também funciona com o nome simples
+  res = await invoke(resolve9, { method: 'POST', body: { name: 'RADIOATIVO', artist: '7 Minutoz' } });
+  check('resolve com nome simples continua a funcionar', res.code === 200 && !!res.body.previewUrl, { code: res.code });
+  api.call = origCall;
 
   console.log(`\n${passed} passaram, ${failed} falharam`);
   process.exit(failed ? 1 : 0);

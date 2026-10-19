@@ -12,7 +12,7 @@ const EMBEDDED = /(^|\.)discordsays\.com$/i.test(location.hostname);
 const proxyUrl = (kind, url) => (EMBEDDED && url) ? `${API_BASE}/api/${kind}?url=${encodeURIComponent(url)}` : url;
 const imgProxy = url => proxyUrl('image', url);
 const audioProxy = url => proxyUrl('preview', url);
-const EMBEDDED_NOTE = 'A correr dentro do Discord: as faixas tocam como prévia de áudio (a reprodução completa do YouTube não foi verificada dentro da Atividade).';
+const EMBEDDED_NOTE = 'A correr dentro do Discord: as faixas tocam com áudio completo do YouTube; se a extração falhar, toca a prévia de 30s.';
 
 /* ================= DADOS DE DEMONSTRAÇÃO ================= */
 const DEMO = [
@@ -64,9 +64,9 @@ async function searchAPI(q){
     return normalize(await res.json());
   } finally { clearTimeout(to); }
 }
-// procura uma prévia tocável (Deezer/Spotify/Apple) para faixas sem previewUrl
+// procura uma versão tocável (prévia OU vídeo do YouTube Music) para faixas sem fonte
 async function resolvePreview(t){
-  const ctrl = new AbortController(); const to = setTimeout(()=>ctrl.abort(), 12000);
+  const ctrl = new AbortController(); const to = setTimeout(()=>ctrl.abort(), 15000);
   try{
     const res = await fetch(`${API_BASE}/api/resolve`, {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -74,10 +74,25 @@ async function resolvePreview(t){
     });
     if(!res.ok) return null;
     const d = await res.json();
-    return d.previewUrl ? d : null;
+    return (d.previewUrl || d.videoId) ? d : null;
   }catch(e){ return null; }
   finally { clearTimeout(to); }
 }
+// extrai a faixa COMPLETA do YouTube (só áudio) no servidor
+async function ytAudio(videoId){
+  const ctrl = new AbortController(); const to = setTimeout(()=>ctrl.abort(), 20000);
+  try{
+    const res = await fetch(`${API_BASE}/api/ytaudio`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ videoId }), signal: ctrl.signal
+    });
+    if(!res.ok) return null;
+    const d = await res.json();
+    return d.url ? d : null;
+  }catch(e){ return null; }
+  finally { clearTimeout(to); }
+}
+const ytStreamSrc = url => `${API_BASE}/api/ytstream?u=${encodeURIComponent(url)}`;
 
 /* ================= RENDER ================= */
 function render(){
@@ -171,6 +186,33 @@ audio.addEventListener('timeupdate',()=>{
   $('#cur').textContent = fmt(audio.currentTime);
   if(audio.duration) $('#seek').value = (audio.currentTime/audio.duration)*100;
 });
+// a faixa completa falhou a CARREGAR (URL expirada, bloqueio, rede): cai para a prévia
+audio.addEventListener('error', async ()=>{
+  if(mode !== 'audio' || current < 0) return;
+  if(!audio.src || !audio.src.includes('/api/ytstream')) return; // só falhas da faixa completa
+  const t = list[current]; if(!t) return;
+  const my = playToken;
+  let purl = t.previewUrl;
+  if(!purl){
+    resolveState = 'pending'; // pausa durante esta procura muda a intenção; não retoma a fonte falhada
+    const hit = await resolvePreview(t);
+    if(my !== playToken) return;
+    const c = hit && ((hit.candidates || []).find(x => x.previewUrl) || (hit.previewUrl ? hit : null));
+    purl = c && c.previewUrl;
+  }
+  if(my !== playToken) return;
+  if(purl){
+    resolveState = null;
+    toast('A faixa completa falhou — a tocar a prévia de 30s');
+    t.previewUrl = purl;
+    audio.src = audioProxy(purl);
+    if(playIntent && playIntent.token === my && playIntent.wantPlay) safePlay(); else setIcon(false);
+  } else {
+    resolveState = 'failed';
+    toast('Não consegui carregar esta faixa. Tenta outra versão na busca.');
+    setIcon(false);
+  }
+});
 
 async function play(i){
   const t = list[i]; if(!t) return;
@@ -199,35 +241,69 @@ async function play(i){
   if(yt && yt.pauseVideo) yt.pauseVideo();
   $('#ytBox').classList.remove('show');
 
-  let src = t.previewUrl ? audioProxy(t.previewUrl) : null;
-  if(!src){
-    // faixa do YouTube/demo dentro do Discord (ou sem prévia): procura uma prévia tocável
+  let src = null;
+
+  // dentro do Discord: áudio COMPLETO do YouTube (o player embutido não passa na CSP da Atividade)
+  if(t.videoId && EMBEDDED){
     resolveState = 'pending';
-    toast('Procurando uma prévia…');
+    toast('A preparar a faixa completa…');
+    const info = await ytAudio(t.videoId);
+    if(my !== playToken) return;
+    if(info){
+      resolveState = null; // fonte pronta
+      if(info.title) $('#npTitle').textContent = info.title;
+      src = ytStreamSrc(info.url);
+    }
+  }
+
+  if(!src && t.previewUrl){
+    resolveState = null; // fonte pronta
+    src = audioProxy(t.previewUrl);
+  }
+
+  if(!src){
+    // sem vídeo nem prévia: procura uma versão tocável (YouTube Music, Deezer, Spotify…)
+    resolveState = 'pending';
+    toast('A procurar a faixa…');
     const hit = await resolvePreview(t);
     if(my !== playToken) return; // o utilizador já escolheu outra faixa
     if(hit){
-      resolveState = null;
-      t.previewUrl = hit.previewUrl;
-      if(!t.imageUrl && hit.imageUrl){ t.imageUrl = hit.imageUrl; render(); }
-      // mostra o que vai tocar de verdade (pode ser outra gravação equivalente)
-      $('#npTitle').textContent = hit.name; $('#npArtist').textContent = hit.artist;
-      toast(`Tocando a prévia de: ${hit.name} — ${hit.artist}`);
-      src = audioProxy(hit.previewUrl);
-    } else {
-      resolveState = 'failed';
+      // percorre as versões encontradas: primeiro faixa completa, depois prévia
+      const candidates = (hit.candidates && hit.candidates.length) ? hit.candidates : [hit];
+      for(const c of candidates){
+        if(my !== playToken) return;
+        if(c.videoId){
+          const info = await ytAudio(c.videoId); // resolveState continua 'pending' durante a extração
+          if(my !== playToken) return;
+          if(info){
+            resolveState = null; // fonte pronta
+            if(!t.imageUrl && c.imageUrl){ t.imageUrl = c.imageUrl; render(); }
+            $('#npTitle').textContent = info.title || c.name; $('#npArtist').textContent = c.artist;
+            src = ytStreamSrc(info.url);
+            break;
+          }
+        }
+        if(!src && c.previewUrl){
+          resolveState = null; // fonte pronta
+          t.previewUrl = c.previewUrl;
+          if(!t.imageUrl && c.imageUrl){ t.imageUrl = c.imageUrl; render(); }
+          $('#npTitle').textContent = c.name; $('#npArtist').textContent = c.artist;
+          toast(`Sem áudio completo — a tocar a prévia de 30s de: ${c.name}`);
+          src = audioProxy(c.previewUrl);
+          break;
+        }
+      }
     }
   }
   if(my !== playToken) return;
   if(!src){
+    resolveState = 'failed'; // todas as fontes falharam
     audio.pause(); setIcon(false);
-    toast(EMBEDDED
-      ? 'Não achei uma prévia tocável para esta faixa dentro do Discord'
-      : 'Esta faixa não tem prévia. Use o link "Abrir no …".');
+    toast('Não encontrei uma fonte tocável para esta faixa. Tenta outra versão da música na busca.');
     return;
   }
   audio.src = src;
-  // se o utilizador pausou enquanto a prévia era procurada, não tocar sozinho
+  // se o utilizador pausou enquanto a faixa era preparada, não tocar sozinho
   if(playIntent && playIntent.token === my && playIntent.wantPlay) safePlay();
   else setIcon(false);
 }
