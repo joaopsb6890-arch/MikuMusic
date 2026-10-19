@@ -20,9 +20,18 @@ async function call(path, body) {
   return json;
 }
 
+const isYT = s => /^youtube/i.test(s);
+const ID11 = /^[\w-]{11}$/;
+
 // formato único que o site entende
 function fromPublic(source, d) {
+  let videoId = null;
+  if (isYT(source)) {
+    try { videoId = new URL(d.url).searchParams.get('v'); } catch {}
+    if (!videoId && ID11.test(d.externalId || '')) videoId = d.externalId;
+  }
   return {
+    videoId,
     id: `${source}:${d.externalId}`,
     name: d.name,
     artist: (d.artistNames || []).join(', ') || 'Artista desconhecido',
@@ -34,7 +43,9 @@ function fromPublic(source, d) {
   };
 }
 function fromTrack(source, t) {
+  const videoId = isYT(source) && ID11.test(t.id || '') ? t.id : null;
   return {
+    videoId,
     id: `${source}:${t.id}`,
     name: t.name,
     artist: (t.artists || []).map(a => a.name).join(', ') || 'Artista desconhecido',

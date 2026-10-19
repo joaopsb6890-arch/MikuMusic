@@ -8,7 +8,7 @@ module.exports = async (req, res) => {
     if (!query) return res.status(400).json({ error: 'query obrigatória' });
 
     // serviços consultados; troque na Vercel com MUSICAPI_SOURCES=deezer,spotify,...
-    const sources = (process.env.MUSICAPI_SOURCES || 'deezer,spotify,appleMusic,YouTube')
+    const sources = (process.env.MUSICAPI_SOURCES || 'youtubeMusic,youtube,deezer,spotify')
       .split(',').map(s => s.trim()).filter(Boolean);
 
     const data = await call('/public/search', { type: 'track', track: query, sources });
