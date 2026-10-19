@@ -91,6 +91,8 @@ input[type=range]{-webkit-appearance:none;appearance:none;height:5px;border-radi
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--miku)}
 input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--miku)}
 .vol{width:90px}
+.yt{position:fixed;right:16px;bottom:104px;width:min(320px,calc(100% - 24px));aspect-ratio:16/9;border-radius:16px;overflow:hidden;background:#000;z-index:25;box-shadow:0 16px 36px -10px rgba(11,46,51,.55);display:none}
+.yt.show{display:block}.yt iframe{width:100%;height:100%;display:block}
 .toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%) translateY(20px);background:#fff;color:var(--ink);border:2px solid var(--ink);padding:10px 18px;border-radius:999px;font-weight:500;opacity:0;pointer-events:none;transition:.25s;z-index:40}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 @media (max-width:720px){
@@ -128,6 +130,8 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radiu
   <div class="head"><h2 id="title">Em destaque</h2><small id="count"></small></div>
   <div class="grid" id="grid"></div>
 </main>
+
+<div class="yt" id="ytBox"><div id="ytPlayer"></div></div>
 
 <div class="toast" id="toast" role="status"></div>
 
@@ -221,33 +225,104 @@ function skeletons(){ $('#grid').innerHTML = Array(8).fill('<div class="skeleton
 function setBanner(msg){ const b=$('#banner'); b.hidden=!msg; b.textContent=msg||''; }
 
 /* ================= PLAYER ================= */
-function play(i){
-  const t = list[i]; if(!t) return;
-  current = i;
-  $('#npTitle').textContent = t.name; $('#npArtist').textContent = t.artist;
-  $('#npThumb').innerHTML = coverHTML(t);
-  render();
-  if(!t.previewUrl){ audio.pause(); setIcon(false); toast('Esta faixa não tem prévia disponível'); return; }
-  audio.src = t.previewUrl;
-  audio.play().catch(()=>toast('Não foi possível tocar esta prévia'));
+let mode = 'audio', yt = null, ytReady = null, curVol = .8;
+
+// play() devolve uma promessa; ao trocar de faixa ela pode ser interrompida (AbortError), o que é normal.
+function safePlay(){
+  const p = audio.play();
+  if(p && p.catch) p.catch(e=>{ if(e.name!=='AbortError') toast('Não foi possível tocar esta prévia'); });
 }
 function setIcon(playing){
   $('#icoPlay').innerHTML = playing ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>';
 }
-audio.addEventListener('play',()=>setIcon(true));
-audio.addEventListener('pause',()=>setIcon(false));
-audio.addEventListener('ended',()=>step(1));
-audio.addEventListener('loadedmetadata',()=>{ $('#dur').textContent=fmt(audio.duration); });
+
+/* --- YouTube (player oficial incorporado) --- */
+function ensureYT(){
+  if(ytReady) return ytReady;
+  ytReady = new Promise((resolve,reject)=>{
+    window.onYouTubeIframeAPIReady = ()=>{
+      yt = new YT.Player('ytPlayer',{
+        width:'100%', height:'100%', playerVars:{playsinline:1, rel:0, modestbranding:1},
+        events:{
+          onReady:()=>{ yt.setVolume(curVol*100); resolve(yt); },
+          onStateChange:e=>{
+            if(mode!=='yt') return;
+            if(e.data===1) setIcon(true);
+            else if(e.data===2) setIcon(false);
+            else if(e.data===0){ setIcon(false); step(1); }
+          },
+          onError:()=>{ setIcon(false); toast('Este vídeo não pode ser tocado aqui. Use o link “Abrir no YouTube”.'); }
+        }
+      });
+    };
+    const sc = document.createElement('script');
+    sc.src = 'https://www.youtube.com/iframe_api';
+    sc.onerror = ()=>reject(new Error('yt'));
+    document.head.appendChild(sc);
+  });
+  ytReady.catch(()=>{ ytReady = null; });
+  return ytReady;
+}
+setInterval(()=>{
+  if(mode!=='yt' || !yt || !yt.getDuration) return;
+  const d = yt.getDuration(), c = yt.getCurrentTime();
+  if(d>0){ $('#cur').textContent=fmt(c); $('#dur').textContent=fmt(d); $('#seek').value=(c/d)*100; }
+}, 500);
+
+/* --- áudio de prévia (Deezer, Spotify etc.) --- */
+audio.addEventListener('play',()=>{ if(mode==='audio') setIcon(true); });
+audio.addEventListener('pause',()=>{ if(mode==='audio') setIcon(false); });
+audio.addEventListener('ended',()=>{ if(mode==='audio') step(1); });
+audio.addEventListener('loadedmetadata',()=>{ if(mode==='audio') $('#dur').textContent=fmt(audio.duration); });
 audio.addEventListener('timeupdate',()=>{
+  if(mode!=='audio') return;
   $('#cur').textContent = fmt(audio.currentTime);
   if(audio.duration) $('#seek').value = (audio.currentTime/audio.duration)*100;
 });
+
+async function play(i){
+  const t = list[i]; if(!t) return;
+  current = i;
+  $('#npTitle').textContent = t.name; $('#npArtist').textContent = t.artist;
+  $('#npThumb').innerHTML = coverHTML(t);
+  $('#seek').value = 0; $('#cur').textContent = '0:00'; $('#dur').textContent = '0:00';
+  render();
+
+  if(t.videoId){
+    mode = 'yt'; audio.pause();
+    $('#ytBox').classList.add('show');
+    try{
+      const p = await ensureYT();
+      if(current===i) p.loadVideoById(t.videoId);
+    }catch(e){ toast('Não consegui carregar o player do YouTube'); }
+    return;
+  }
+
+  mode = 'audio';
+  if(yt && yt.pauseVideo) yt.pauseVideo();
+  $('#ytBox').classList.remove('show');
+  if(!t.previewUrl){ audio.pause(); setIcon(false); toast('Esta faixa não tem prévia. Use o link “Abrir no …”.'); return; }
+  audio.src = t.previewUrl;
+  safePlay();
+}
 function step(d){ if(!list.length) return; play((current + d + list.length) % list.length); }
-$('#toggle').onclick = ()=>{ if(current<0){ play(0); return; } audio.paused ? audio.play() : audio.pause(); };
+
+$('#toggle').onclick = ()=>{
+  if(current<0){ play(0); return; }
+  if(mode==='yt'){ if(yt) (yt.getPlayerState()===1 ? yt.pauseVideo() : yt.playVideo()); }
+  else audio.paused ? safePlay() : audio.pause();
+};
 $('#prev').onclick = ()=>step(-1);
 $('#next').onclick = ()=>step(1);
-$('#seek').oninput = e=>{ if(audio.duration) audio.currentTime = (e.target.value/100)*audio.duration; };
-$('#vol').oninput = e=>{ audio.volume = e.target.value; };
+$('#seek').oninput = e=>{
+  const pct = e.target.value/100;
+  if(mode==='yt'){ if(yt && yt.getDuration) yt.seekTo(pct*yt.getDuration(), true); }
+  else if(audio.duration) audio.currentTime = pct*audio.duration;
+};
+$('#vol').oninput = e=>{
+  curVol = +e.target.value; audio.volume = curVol;
+  if(yt && yt.setVolume) yt.setVolume(curVol*100);
+};
 
 /* ================= AÇÕES ================= */
 async function doSearch(q){
